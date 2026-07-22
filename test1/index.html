@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ontario Healthcare Wait Times — Proof of Concept</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet CSS from CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+    .legend {
+      background: white;
+      padding: 10px 12px;
+      border-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+      line-height: 1.4;
+      font-size: 13px;
+    }
+    .legend h4 {
+      margin: 0 0 6px 0;
+      font-size: 13px;
+    }
+    .legend span {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      margin-right: 6px;
+      vertical-align: middle;
+      border: 1px solid #999;
+    }
+    .info-heading {
+      margin: 0 0 4px 0;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <!-- Leaflet JS from CDN -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // ---- Initialize the map, centered roughly on Ontario ----
+    const map = L.map('map').setView([49.5, -84.5], 5);
+
+    // ---- Base layer: OpenStreetMap tiles (free, no API key needed) ----
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 18
+    }).addTo(map);
+
+    // ---- Color scale function for ER wait times (hours) ----
+    // Adjust these breakpoints once you have real data distributions.
+    function getColor(hours) {
+      return hours > 7 ? '#7f0000' :
+             hours > 6 ? '#b30000' :
+             hours > 5 ? '#e34a33' :
+             hours > 4 ? '#fc8d59' :
+             hours > 3 ? '#fdcc8a' :
+                          '#fef0d9';
+    }
+
+    function style(feature) {
+      return {
+        fillColor: getColor(feature.properties.er_wait_hrs),
+        weight: 1.5,
+        opacity: 1,
+        color: '#555',
+        fillOpacity: 0.75
+      };
+    }
+
+    // ---- Hover highlight behavior ----
+    function highlightFeature(e) {
+      const layer = e.target;
+      layer.setStyle({
+        weight: 3,
+        color: '#222',
+        fillOpacity: 0.9
+      });
+      layer.bringToFront();
+    }
+
+    function resetHighlight(e) {
+      geojsonLayer.resetStyle(e.target);
+    }
+
+    // ---- Click-to-zoom behavior ----
+    function zoomToFeature(e) {
+      map.fitBounds(e.target.getBounds());
+    }
+
+    // ---- Tooltip/popup content per riding ----
+    function onEachFeature(feature, layer) {
+      const p = feature.properties;
+      layer.bindPopup(
+        `<div class="info-heading"><strong>${p.riding}</strong></div>
+         ER wait time: <strong>${p.er_wait_hrs} hrs</strong><br>
+         Specialist wait: <strong>${p.specialist_wait_days} days</strong>`
+      );
+
+      layer.on({
+        mouseover: highlightFeature,
+        mouseout: resetHighlight,
+        click: zoomToFeature
+      });
+    }
+
+    // ---- Load the sample GeoJSON and add it to the map ----
+    let geojsonLayer;
+
+    fetch('data.geojson')
+      .then(response => response.json())
+      .then(data => {
+        geojsonLayer = L.geoJSON(data, {
+          style: style,
+          onEachFeature: onEachFeature
+        }).addTo(map);
+      })
+      .catch(err => {
+        console.error('Error loading GeoJSON:', err);
+        alert('Could not load data.geojson — check the browser console for details.');
+      });
+
+    // ---- Legend ----
+    const legend = L.control({ position: 'bottomright' });
+
+    legend.onAdd = function () {
+      const div = L.DomUtil.create('div', 'legend');
+      const grades = [0, 3, 4, 5, 6, 7];
+      const labels = ['0–3 hrs', '3–4 hrs', '4–5 hrs', '5–6 hrs', '6–7 hrs', '7+ hrs'];
+
+      div.innerHTML = '<h4>ER Wait Time</h4>';
+      for (let i = 0; i < grades.length; i++) {
+        div.innerHTML +=
+          `<span style="background:${getColor(grades[i] + 0.1)}"></span> ${labels[i]}<br>`;
+      }
+      return div;
+    };
+
+    legend.addTo(map);
+  </script>
+
+</body>
+</html>
