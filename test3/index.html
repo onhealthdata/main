@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ontario Federal Ridings — Census Data</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet CSS from CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+    .legend {
+      background: white;
+      padding: 10px 12px;
+      border-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+      line-height: 1.4;
+      font-size: 13px;
+    }
+    .legend h4 {
+      margin: 0 0 6px 0;
+      font-size: 13px;
+    }
+    .legend span {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      margin-right: 6px;
+      vertical-align: middle;
+      border: 1px solid #999;
+    }
+    .info-heading {
+      margin: 0 0 4px 0;
+      font-size: 15px;
+    }
+    .layer-switcher {
+      background: white;
+      padding: 8px 10px;
+      border-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+      font-size: 13px;
+    }
+    .layer-switcher h4 {
+      margin: 0 0 6px 0;
+      font-size: 13px;
+    }
+    .layer-switcher label {
+      display: block;
+      margin-bottom: 4px;
+      cursor: pointer;
+    }
+    .layer-switcher input {
+      margin-right: 6px;
+    }
+    .popup-primary {
+      font-size: 14px;
+      font-weight: bold;
+      padding-bottom: 6px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid #ddd;
+    }
+    .popup-secondary {
+      font-size: 13px;
+      font-weight: normal;
+      color: #444;
+    }
+    .lang-switcher {
+      background: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+      font-size: 12px;
+    }
+    .lang-switcher button {
+      border: none;
+      background: none;
+      font-size: 12px;
+      font-family: Arial, Helvetica, sans-serif;
+      cursor: pointer;
+      padding: 2px 6px;
+      color: #555;
+    }
+    .lang-switcher button.active {
+      font-weight: bold;
+      color: #08306b;
+      text-decoration: underline;
+    }
+    .lang-switcher .divider {
+      color: #ccc;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <!-- Leaflet JS from CDN -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // ---- Initialize the map, centered roughly on Ontario ----
+    const map = L.map('map').setView([49.5, -84.5], 5);
+
+    // ---- Base layer: OpenStreetMap tiles (free, no API key needed) ----
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 18
+    }).addTo(map);
+
+    // ---- Metric definitions: field name, color breakpoints, legend labels (per language), units ----
+    // Breakpoints below are based on the actual data range at build time
+    // (median age: 32.4-54.4, unemployment rate: 6.5%-21.4%). Revisit if the
+    // underlying census data changes.
+    const metrics = {
+      median_age: {
+        label: { en: 'Median Age', fr: 'Âge médian' },
+        unit: { en: 'yrs', fr: 'ans' },
+        grades:  [30, 35, 40, 45, 50],
+        colors:  ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c', '#08306b']
+      },
+      unemployment_rate: {
+        label: { en: 'Unemployment Rate', fr: 'Taux de chômage' },
+        unit: { en: '%', fr: ' %' },
+        grades:  [6, 9, 12, 15, 18],
+        colors:  ['#fef0d9', '#fdcc8a', '#fc8d59', '#e34a33', '#b30000', '#7f0000']
+      }
+    };
+
+    // ---- UI text in both languages ----
+    const uiText = {
+      en: {
+        medianAgeOption: 'Median Age',
+        unemploymentOption: 'Unemployment Rate',
+        medianAgePopup: 'Median age',
+        unemploymentPopup: 'Unemployment rate',
+        yrs: 'yrs',
+        switcherTitle: 'Map Data Selection'
+      },
+      fr: {
+        medianAgeOption: 'Âge médian',
+        unemploymentOption: 'Taux de chômage',
+        medianAgePopup: 'Âge médian',
+        unemploymentPopup: 'Taux de chômage',
+        yrs: 'ans',
+        switcherTitle: 'Sélection des données cartographiques'
+      }
+    };
+
+    // Which metric is currently displayed
+    let currentMetric = 'median_age';
+
+    // Which language is currently displayed ('en' or 'fr')
+    let currentLang = 'en';
+
+    // ---- Color scale lookup for a given metric + value ----
+    function getColor(value, metricKey) {
+      const m = metrics[metricKey];
+      const g = m.grades;
+      if (value > g[4]) return m.colors[5];
+      if (value > g[3]) return m.colors[4];
+      if (value > g[2]) return m.colors[3];
+      if (value > g[1]) return m.colors[2];
+      if (value > g[0]) return m.colors[1];
+      return m.colors[0];
+    }
+
+    function style(feature) {
+      return {
+        fillColor: getColor(feature.properties[currentMetric], currentMetric),
+        weight: 1.5,
+        opacity: 1,
+        color: '#555',
+        fillOpacity: 0.75
+      };
+    }
+
+    // ---- Hover highlight behavior ----
+    function highlightFeature(e) {
+      const layer = e.target;
+      layer.setStyle({
+        weight: 3,
+        color: '#222',
+        fillOpacity: 0.9
+      });
+      layer.bringToFront();
+    }
+
+    function resetHighlight(e) {
+      geojsonLayer.resetStyle(e.target);
+    }
+
+    // ---- Click-to-zoom behavior ----
+    function zoomToFeature(e) {
+      map.fitBounds(e.target.getBounds());
+    }
+
+    // ---- Popup content per riding, showing both metrics regardless of active layer ----
+    // Rebuilds popup HTML fresh each time it opens, so it always reflects the current language.
+    function onEachFeature(feature, layer) {
+      layer.on({
+        mouseover: highlightFeature,
+        mouseout: resetHighlight,
+        click: zoomToFeature
+      });
+
+      layer.on('popupopen', function () {
+        updatePopupContent(feature, layer);
+      });
+
+      // Bind an initial (empty) popup so the popupopen event above fires correctly;
+      // content itself gets filled in via updatePopupContent.
+      layer.bindPopup('');
+      updatePopupContent(feature, layer);
+    }
+
+    function updatePopupContent(feature, layer) {
+      const p = feature.properties;
+      const t = uiText[currentLang];
+      const name = currentLang === 'fr' ? p.ED_NAMEF : p.ED_NAMEE;
+
+      // Build the two metric lines, with the currently-selected metric first.
+      const lines = {
+        median_age: `${t.medianAgePopup}: ${p.median_age} ${t.yrs}`,
+        unemployment_rate: `${t.unemploymentPopup}: ${p.unemployment_rate}%`
+      };
+      const otherMetric = currentMetric === 'median_age' ? 'unemployment_rate' : 'median_age';
+
+      layer.setPopupContent(
+        `<div class="info-heading"><strong>${name}</strong></div>
+         <div class="popup-primary">${lines[currentMetric]}</div>
+         <div class="popup-secondary">${lines[otherMetric]}</div>`
+      );
+    }
+
+    // ---- Load the real Ontario riding GeoJSON and add it to the map ----
+    let geojsonLayer;
+
+    fetch('ON_Fed_Electoral_Dist_2025.geojson')
+      .then(response => response.json())
+      .then(data => {
+        geojsonLayer = L.geoJSON(data, {
+          style: style,
+          onEachFeature: onEachFeature
+        }).addTo(map);
+      })
+      .catch(err => {
+        console.error('Error loading GeoJSON:', err);
+        alert('Could not load ON_Fed_Electoral_Dist_2025.geojson — check the browser console for details.');
+      });
+
+    // ---- Legend (updates when the active metric changes) ----
+    const legend = L.control({ position: 'bottomright' });
+
+    legend.onAdd = function () {
+      this._div = L.DomUtil.create('div', 'legend');
+      this.update();
+      return this._div;
+    };
+
+    legend.update = function () {
+      const m = metrics[currentMetric];
+      const g = m.grades;
+      const label = m.label[currentLang];
+      const unit = m.unit[currentLang];
+      let html = `<h4>${label}</h4>`;
+      const bounds = [null, ...g, null];
+      for (let i = 0; i < m.colors.length; i++) {
+        const lower = bounds[i];
+        const upper = bounds[i + 1];
+        let range;
+        if (lower === null) range = `&lt; ${upper}${unit}`;
+        else if (upper === null) range = `&gt; ${lower}${unit}`;
+        else range = `${lower}&ndash;${upper}${unit}`;
+        html += `<span style="background:${m.colors[i]}"></span> ${range}<br>`;
+      }
+      this._div.innerHTML = html;
+    };
+
+    legend.addTo(map);
+
+    // ---- Layer switcher control (radio buttons) ----
+    const switcher = L.control({ position: 'topright' });
+
+    switcher.onAdd = function () {
+      const div = L.DomUtil.create('div', 'layer-switcher');
+      div.id = 'layer-switcher-box';
+      renderSwitcherHTML(div);
+      // Prevent map drag/zoom when interacting with the control
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    };
+
+    function renderSwitcherHTML(div) {
+      const t = uiText[currentLang];
+      div.innerHTML = `
+        <h4>${t.switcherTitle}</h4>
+        <label>
+          <input type="radio" name="metric" value="median_age" ${currentMetric === 'median_age' ? 'checked' : ''}>
+          ${t.medianAgeOption}
+        </label>
+        <label>
+          <input type="radio" name="metric" value="unemployment_rate" ${currentMetric === 'unemployment_rate' ? 'checked' : ''}>
+          ${t.unemploymentOption}
+        </label>
+      `;
+    }
+
+    switcher.addTo(map);
+
+    // Listen for radio button changes and update the map
+    document.addEventListener('change', function (e) {
+      if (e.target.name === 'metric') {
+        currentMetric = e.target.value;
+        if (geojsonLayer) {
+          geojsonLayer.setStyle(style);
+        }
+        legend.update();
+
+        // Refresh any currently-open popup so it reorders to the new primary metric
+        if (geojsonLayer) {
+          geojsonLayer.eachLayer(function (layer) {
+            if (layer.isPopupOpen()) {
+              updatePopupContent(layer.feature, layer);
+            }
+          });
+        }
+      }
+    });
+
+    // ---- Language switcher control (EN / FR text buttons) ----
+    const langSwitcher = L.control({ position: 'topleft' });
+
+    langSwitcher.onAdd = function () {
+      const div = L.DomUtil.create('div', 'lang-switcher');
+      div.id = 'lang-switcher-box';
+      renderLangSwitcherHTML(div);
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    };
+
+    function renderLangSwitcherHTML(div) {
+      div.innerHTML = `
+        <button type="button" data-lang="en" class="${currentLang === 'en' ? 'active' : ''}">EN</button>
+        <span class="divider">|</span>
+        <button type="button" data-lang="fr" class="${currentLang === 'fr' ? 'active' : ''}">FR</button>
+      `;
+    }
+
+    langSwitcher.addTo(map);
+
+    // Listen for language button clicks and refresh all language-dependent UI
+    document.addEventListener('click', function (e) {
+      if (e.target.dataset && e.target.dataset.lang) {
+        currentLang = e.target.dataset.lang;
+
+        // Refresh the layer switcher labels
+        renderSwitcherHTML(document.getElementById('layer-switcher-box'));
+
+        // Refresh the language switcher's own active-state styling
+        renderLangSwitcherHTML(document.getElementById('lang-switcher-box'));
+
+        // Refresh the legend text
+        legend.update();
+
+        // Refresh any currently-open popup so it shows the new language immediately
+        if (geojsonLayer) {
+          geojsonLayer.eachLayer(function (layer) {
+            if (layer.isPopupOpen()) {
+              updatePopupContent(layer.feature, layer);
+            }
+          });
+        }
+      }
+    });
+  </script>
+
+</body>
+</html>
