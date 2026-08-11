@@ -48,33 +48,35 @@
 <script>
   const map = L.map('map').setView([43.742, -79.296], 12);
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19
   }).addTo(map);
 
-  function style(feature) {
-    return {
-      fillColor: '#3186cc',
-      weight: 1.5,
-      opacity: 1,
-      color: '#1a5276',
-      fillOpacity: 0.35
-    };
-  }
+  const baseStyle = {
+    fillColor: '#3186cc',
+    weight: 1.5,
+    opacity: 1,
+    color: '#1a5276',
+    fillOpacity: 0.35
+  };
+
+  const hoverStyle = {
+    weight: 3,
+    color: '#f39c12',
+    fillOpacity: 0.55
+  };
 
   function highlightFeature(e) {
-    const layer = e.target;
-    layer.setStyle({
-      weight: 3,
-      color: '#f39c12',
-      fillOpacity: 0.55
-    });
-    layer.bringToFront();
+    e.target.setStyle(hoverStyle);
+    e.target.bringToFront();
   }
 
   function resetHighlight(e) {
-    daLayer.resetStyle(e.target);
+    // Reset explicitly to the known base style rather than relying on
+    // Leaflet's resetStyle, which can miss layers if mouseout doesn't
+    // fire cleanly (fast cursor movement, edge transitions, etc.)
+    e.target.setStyle(baseStyle);
   }
 
   function onEachFeature(feature, layer) {
@@ -93,8 +95,17 @@
     });
   }
 
+  // Safety net: if the mouse leaves the map entirely (e.g. onto the
+  // info box or browser chrome) without a mouseout ever firing on the
+  // last-hovered polygon, reset every layer back to base style.
+  document.getElementById('map').addEventListener('mouseleave', function () {
+    daLayer.eachLayer(function (layer) {
+      layer.setStyle(baseStyle);
+    });
+  });
+
   const daLayer = L.geoJSON(daData, {
-    style: style,
+    style: baseStyle,
     onEachFeature: onEachFeature
   }).addTo(map);
 
