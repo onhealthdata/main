@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Toronto 2001 Dissemination Area Boundaries</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  #map {
+    height: 100%;
+    width: 100%;
+  }
+
+  .title-box {
+    position: absolute;
+    top: 10px;
+    left: 50px;
+    z-index: 1000;
+    background: rgba(255, 255, 255, 0.92);
+    padding: 8px 14px;
+    border-radius: 6px;
+    box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+    font-size: 15px;
+    font-weight: 600;
+    color: #222;
+  }
+
+  .title-box span {
+    display: block;
+    font-weight: 400;
+    font-size: 12px;
+    color: #555;
+    margin-top: 2px;
+  }
+
+  #loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2000;
+    background: rgba(255,255,255,0.95);
+    padding: 16px 24px;
+    border-radius: 8px;
+    box-shadow: 0 1px 8px rgba(0,0,0,0.4);
+    font-size: 14px;
+    color: #333;
+  }
+
+  #error-box {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2000;
+    background: #fff3f3;
+    border: 1px solid #d33;
+    padding: 16px 20px;
+    border-radius: 8px;
+    max-width: 420px;
+    font-size: 13px;
+    color: #900;
+    display: none;
+  }
+
+  .leaflet-popup-content {
+    font-size: 14px;
+  }
+
+  .leaflet-popup-content b {
+    font-size: 15px;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="title-box">
+  Toronto Dissemination Areas (2001 Census)
+  <span>Click a boundary to see its DA ID</span>
+</div>
+
+<div id="loading">Loading DA boundaries&hellip;</div>
+<div id="error-box"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+  // Base map centered on Toronto
+  var map = L.map('map', {
+    zoomControl: true
+  }).setView([43.7000, -79.4000], 11);
+
+  // OpenStreetMap tile layer
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  var geojsonLayer;
+
+  // Default (unselected) boundary style
+  var defaultStyle = {
+    color: '#3388ff',
+    weight: 1.5,
+    opacity: 0.9,
+    fillColor: '#3388ff',
+    fillOpacity: 0.05
+  };
+
+  // Highlighted style when hovering
+  var hoverStyle = {
+    color: '#ff7800',
+    weight: 2.5,
+    opacity: 1,
+    fillOpacity: 0.15
+  };
+
+  function onEachFeature(feature, layer) {
+    var daId = (feature.properties && feature.properties.id) ? feature.properties.id : 'Unknown';
+
+    layer.bindPopup('<b>DA ID:</b> ' + daId);
+
+    layer.on({
+      mouseover: function (e) {
+        e.target.setStyle(hoverStyle);
+        e.target.bringToFront();
+      },
+      mouseout: function (e) {
+        geojsonLayer.resetStyle(e.target);
+      },
+      click: function (e) {
+        e.target.openPopup();
+      }
+    });
+  }
+
+  function loadData(url) {
+    fetch(url)
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error('HTTP ' + response.status + ' fetching ' + url);
+        }
+        return response.json();
+      })
+      .then(function (data) {
+        geojsonLayer = L.geoJSON(data, {
+          style: defaultStyle,
+          onEachFeature: onEachFeature
+        }).addTo(map);
+
+        document.getElementById('loading').style.display = 'none';
+
+        var bounds = geojsonLayer.getBounds();
+        if (bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [20, 20] });
+        }
+      })
+      .catch(function (err) {
+        document.getElementById('loading').style.display = 'none';
+        var errBox = document.getElementById('error-box');
+        errBox.style.display = 'block';
+        errBox.innerHTML = '<b>Could not load DA boundaries.</b><br><br>' +
+          'Make sure <code>da_boundaries_2001.geojson</code> is in the same folder as this HTML file ' +
+          '(or update the file name in the script), and that you are viewing this page ' +
+          'via a web server (e.g. GitHub Pages) rather than opening the HTML file directly ' +
+          'from your local disk, since local file access is often blocked by the browser.<br><br>' +
+          '<small>' + err.message + '</small>';
+        console.error(err);
+      });
+  }
+
+  // Name of the GeoJSON file — must sit alongside this HTML file
+  loadData('da_boundaries_2001.geojson');
+
+</script>
+
+</body>
+</html>
