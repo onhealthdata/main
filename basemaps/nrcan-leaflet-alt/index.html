@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Canada Base Map (Leaflet)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  html, body { height: 100%; margin: 0; padding: 0; }
+  #map { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([56.1304, -106.3468], 4); // centered on Canada
+
+  // NRCan Canada Base Map - Transportation (CBMT), EPSG:3857, tiled ESRI REST service.
+  // Two layers stacked: GEOM (roads/boundaries/features) + TXT (place-name labels),
+  // since NRCan publishes the 3857 version as two separate layers rather than one
+  // combined tile set (unlike the 3978/Lambert version, which is a single service).
+  L.tileLayer(
+    'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBMT_CBCT_GEOM_3857/MapServer/tile/{z}/{y}/{x}',
+    {
+      attribution: 'Canada Base Map &copy; Natural Resources Canada',
+      maxZoom: 17
+    }
+  ).addTo(map);
+
+  L.tileLayer(
+    'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBMT_TXT_3857/MapServer/tile/{z}/{y}/{x}',
+    {
+      maxZoom: 17
+    }
+  ).addTo(map);
+</script>
+
+</body>
+</html>
