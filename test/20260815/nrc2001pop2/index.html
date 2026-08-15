@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Toronto 2001 Census — Population by Dissemination Area</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  #map {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 100%;
+  }
+
+  .title-bar {
+    position: absolute;
+    top: 10px;
+    left: 50px;
+    z-index: 1000;
+    background: rgba(255, 255, 255, 0.92);
+    padding: 8px 14px;
+    border-radius: 6px;
+    box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+    font-size: 15px;
+    font-weight: 600;
+    color: #222;
+  }
+
+  .title-bar span {
+    display: block;
+    font-weight: 400;
+    font-size: 12px;
+    color: #555;
+    margin-top: 2px;
+  }
+
+  .legend {
+    background: rgba(255, 255, 255, 0.92);
+    padding: 10px 12px;
+    border-radius: 6px;
+    box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+    line-height: 1.4;
+    font-size: 12px;
+    color: #222;
+  }
+
+  .legend h4 {
+    margin: 0 0 6px 0;
+    font-size: 13px;
+  }
+
+  .legend .swatch {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    vertical-align: middle;
+    border: 1px solid rgba(0,0,0,0.2);
+  }
+
+  .leaflet-popup-content {
+    font-size: 13px;
+  }
+
+  .leaflet-popup-content b {
+    font-size: 14px;
+  }
+
+  #loading {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #eef1f4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    font-size: 14px;
+    color: #444;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="loading">Loading population data…</div>
+
+<div class="title-bar">
+  Toronto — Population by Dissemination Area (2001 Census)
+  <span>Source: 2001 Census Dissemination Areas &middot; Basemap: NRCan Canada Base Map</span>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<script src="da_2001_data.js"></script>
+
+<script>
+// ---- Map setup -------------------------------------------------------
+
+const map = L.map('map', {
+  zoomControl: true
+}).setView([43.7, -79.4], 11);
+
+// NRCan Canada Base Map - geometry (roads, water, land cover, etc.)
+const cbmtGeom = L.tileLayer(
+  'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBMT_CBCT_GEOM_3857/MapServer/tile/{z}/{y}/{x}',
+  {
+    attribution: 'Basemap: &copy; Natural Resources Canada, Canada Base Map',
+    maxZoom: 18,
+    minZoom: 2
+  }
+).addTo(map);
+
+// NRCan Canada Base Map - text/place names (drawn on top)
+const cbctText = L.tileLayer(
+  'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBCT_TXT_3857/MapServer/tile/{z}/{y}/{x}',
+  {
+    maxZoom: 18,
+    minZoom: 2,
+    pane: 'shadowPane' // keep it above polygons, below Leaflet's default marker pane clutter isn't an issue here
+  }
+).addTo(map);
+
+// ---- Choropleth styling -----------------------------------------------
+
+// Population breakpoints (based on the distribution of DA populations)
+const breaks = [0, 250, 500, 750, 1000, 1500, 2000, 3000];
+const colors = [
+  '#ffffcc',
+  '#ffeda0',
+  '#fed976',
+  '#feb24c',
+  '#fd8d3c',
+  '#fc4e2a',
+  '#e31a1c',
+  '#b10026'
+];
+
+function getColor(pop) {
+  for (let i = breaks.length - 1; i >= 0; i--) {
+    if (pop >= breaks[i]) return colors[i];
+  }
+  return colors[0];
+}
+
+function style(feature) {
+  const pop = Number(feature.properties.pop);
+  return {
+    fillColor: getColor(pop),
+    weight: 0.6,
+    opacity: 1,
+    color: '#555555',
+    fillOpacity: 0.75
+  };
+}
+
+function highlightFeature(e) {
+  const layer = e.target;
+  layer.setStyle({
+    weight: 2,
+    color: '#222222',
+    fillOpacity: 0.9
+  });
+  layer.bringToFront();
+}
+
+function resetHighlight(e) {
+  daLayer.resetStyle(e.target);
+}
+
+function formatNumber(n) {
+  return n.toLocaleString('en-CA');
+}
+
+function onEachFeature(feature, layer) {
+  const p = feature.properties;
+  const pop = Number(p.pop);
+  const dwellings = Number(p.dw);
+  const households = Number(p.hh);
+
+  layer.bindPopup(
+    '<b>Dissemination Area ' + p.id + '</b><br>' +
+    'Population: ' + formatNumber(pop) + '<br>' +
+    'Households: ' + formatNumber(households) + '<br>' +
+    'Dwellings: ' + formatNumber(dwellings)
+  );
+
+  layer.on({
+    mouseover: highlightFeature,
+    mouseout: resetHighlight
+  });
+}
+
+// ---- Load data ----------------------------------------------------
+
+let daLayer;
+
+if (typeof daData2001 !== 'undefined') {
+  daLayer = L.geoJSON(daData2001, {
+    style: style,
+    onEachFeature: onEachFeature
+  }).addTo(map);
+
+  map.fitBounds(daLayer.getBounds());
+  document.getElementById('loading').style.display = 'none';
+} else {
+  document.getElementById('loading').textContent =
+    'Error: da_2001_data.js failed to load.';
+}
+
+// ---- Legend ---------------------------------------------------------
+
+const legend = L.control({ position: 'bottomright' });
+
+legend.onAdd = function () {
+  const div = L.DomUtil.create('div', 'legend');
+  let html = '<h4>Population per DA</h4>';
+
+  for (let i = 0; i < breaks.length; i++) {
+    const from = breaks[i];
+    const to = breaks[i + 1];
+    html +=
+      '<div><span class="swatch" style="background:' + colors[i] + '"></span>' +
+      formatNumber(from) + (to ? '&ndash;' + formatNumber(to - 1) : '+') +
+      '</div>';
+  }
+
+  div.innerHTML = html;
+  return div;
+};
+
+legend.addTo(map);
+
+// ---- Layer control ----------------------------------------------------
+
+const overlays = {
+  'Dissemination Areas (Population)': daLayer,
+  'Place Names': cbctText
+};
+
+L.control.layers(null, overlays, { collapsed: true }).addTo(map);
+
+</script>
+
+</body>
+</html>
