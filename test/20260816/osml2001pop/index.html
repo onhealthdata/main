@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Toronto 2001 Census — Population by Dissemination Area</title>
+
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  #map {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 100%;
+  }
+
+  .title-bar {
+    position: absolute;
+    top: 10px;
+    left: 50px;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.92);
+    padding: 8px 14px;
+    border-radius: 6px;
+    box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+    font-size: 15px;
+    font-weight: 600;
+    color: #222;
+  }
+
+  .title-bar span {
+    display: block;
+    font-weight: 400;
+    font-size: 12px;
+    color: #555;
+    margin-top: 2px;
+  }
+
+  .legend {
+    background: rgba(255, 255, 255, 0.92);
+    padding: 10px 12px;
+    border-radius: 6px;
+    box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+    line-height: 1.4;
+    font-size: 12px;
+    color: #222;
+    margin: 0 10px 20px 0;
+  }
+
+  .legend h4 {
+    margin: 0 0 6px 0;
+    font-size: 13px;
+  }
+
+  .legend .swatch {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    vertical-align: middle;
+    border: 1px solid rgba(0,0,0,0.2);
+  }
+
+  .maplibregl-popup-content {
+    font-size: 13px;
+    padding: 10px 12px;
+  }
+
+  .maplibregl-popup-content b {
+    font-size: 14px;
+  }
+
+  #loading {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #eef1f4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    font-size: 14px;
+    color: #444;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="loading">Loading map…</div>
+
+<div class="title-bar">
+  Toronto — Population by Dissemination Area (2001 Census)
+  <span>Source: 2001 Census Dissemination Areas &middot; Basemap: OSM Liberty (self-hosted, OpenStreetMap data)</span>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js"></script>
+
+<script src="da_2001_data.js"></script>
+
+<script>
+// ---- Register the pmtiles:// protocol so MapLibre can read our self-hosted archive ----
+
+const pmtilesProtocol = new pmtiles.Protocol();
+maplibregl.addProtocol('pmtiles', pmtilesProtocol.tile);
+
+// ---- Map setup -------------------------------------------------------
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'osm_liberty.json',
+  center: [-79.4, 43.7],
+  zoom: 11,
+  attributionControl: false
+});
+
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+map.addControl(
+  new maplibregl.AttributionControl({
+    customAttribution: 'Census data: Statistics Canada, 2001 Census'
+  })
+);
+
+// ---- Choropleth styling -----------------------------------------------
+
+const breaks  = [0, 250, 500, 750, 1000, 1500, 2000, 3000];
+const colors  = ['#ffffcc', '#ffeda0', '#fed976', '#feb24c', '#fd8d3c', '#fc4e2a', '#e31a1c', '#b10026'];
+
+// MapLibre 'step' expression: colors[0] below breaks[1], colors[1] between
+// breaks[1] and breaks[2], etc. Population is stored as a string in the
+// source data, so it's cast to a number first.
+const fillColorExpression = [
+  'step',
+  ['to-number', ['get', 'pop']],
+  colors[0],
+  breaks[1], colors[1],
+  breaks[2], colors[2],
+  breaks[3], colors[3],
+  breaks[4], colors[4],
+  breaks[5], colors[5],
+  breaks[6], colors[6],
+  breaks[7], colors[7]
+];
+
+function formatNumber(n) {
+  return n.toLocaleString('en-CA');
+}
+
+let hoveredId = null;
+let popup = null;
+
+map.on('load', () => {
+  map.addSource('da', {
+    type: 'geojson',
+    data: daData2001,
+    promoteId: 'id' // use each DA's own 'id' property as the feature-state id
+  });
+
+  map.addLayer({
+    id: 'da-fill',
+    type: 'fill',
+    source: 'da',
+    paint: {
+      'fill-color': fillColorExpression,
+      'fill-opacity': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        0.9,
+        0.75
+      ]
+    }
+  });
+
+  map.addLayer({
+    id: 'da-line',
+    type: 'line',
+    source: 'da',
+    paint: {
+      'line-color': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        '#222222',
+        '#555555'
+      ],
+      'line-width': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        2,
+        0.6
+      ]
+    }
+  });
+
+  // Fit the map to the DA dataset's extent
+  const bounds = new maplibregl.LngLatBounds();
+  daData2001.features.forEach(f => {
+    const coords = f.geometry.coordinates;
+    const flatten = (arr) => {
+      if (typeof arr[0] === 'number') {
+        bounds.extend(arr);
+      } else {
+        arr.forEach(flatten);
+      }
+    };
+    flatten(coords);
+  });
+  map.fitBounds(bounds, { padding: 30, animate: false });
+
+  document.getElementById('loading').style.display = 'none';
+
+  // ---- Hover highlight ----
+  map.on('mousemove', 'da-fill', (e) => {
+    if (e.features.length === 0) return;
+    if (hoveredId !== null) {
+      map.setFeatureState({ source: 'da', id: hoveredId }, { hover: false });
+    }
+    hoveredId = e.features[0].id;
+    map.setFeatureState({ source: 'da', id: hoveredId }, { hover: true });
+    map.getCanvas().style.cursor = 'pointer';
+  });
+
+  map.on('mouseleave', 'da-fill', () => {
+    if (hoveredId !== null) {
+      map.setFeatureState({ source: 'da', id: hoveredId }, { hover: false });
+    }
+    hoveredId = null;
+    map.getCanvas().style.cursor = '';
+  });
+
+  // ---- Click popup ----
+  map.on('click', 'da-fill', (e) => {
+    const p = e.features[0].properties;
+    const pop = Number(p.pop);
+    const households = Number(p.hh);
+    const dwellings = Number(p.dw);
+
+    if (popup) popup.remove();
+    popup = new maplibregl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML(
+        '<b>Dissemination Area ' + p.id + '</b><br>' +
+        'Population: ' + formatNumber(pop) + '<br>' +
+        'Households: ' + formatNumber(households) + '<br>' +
+        'Dwellings: ' + formatNumber(dwellings)
+      )
+      .addTo(map);
+  });
+});
+
+// ---- Legend control ----------------------------------------------------
+
+class LegendControl {
+  onAdd() {
+    this._div = document.createElement('div');
+    this._div.className = 'legend maplibregl-ctrl';
+    let html = '<h4>Population per DA</h4>';
+    for (let i = 0; i < breaks.length; i++) {
+      const from = breaks[i];
+      const to = breaks[i + 1];
+      html +=
+        '<div><span class="swatch" style="background:' + colors[i] + '"></span>' +
+        formatNumber(from) + (to ? '&ndash;' + formatNumber(to - 1) : '+') +
+        '</div>';
+    }
+    this._div.innerHTML = html;
+    return this._div;
+  }
+  onRemove() {
+    this._div.parentNode.removeChild(this._div);
+  }
+}
+
+map.addControl(new LegendControl(), 'bottom-right');
+</script>
+
+</body>
+</html>
