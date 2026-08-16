@@ -9,7 +9,7 @@
   "sources": {
     "openmaptiles": {
       "type": "vector",
-      "url": "pmtiles://REPLACE_WITH_YOUR_RELEASE_URL/ontario.pmtiles"
+      "url": "pmtiles://https://github.com/onhealthdata/main/releases/download/v1.0/ontario.pmtiles"
     }
   },
   "sprite": "https://maputnik.github.io/osm-liberty/sprites/osm-liberty",
