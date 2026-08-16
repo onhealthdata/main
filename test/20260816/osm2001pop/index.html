@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Toronto 2001 Census Dissemination Areas — Population</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  html, body { height: 100%; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
+  #map { height: 100%; width: 100%; }
+
+  .info {
+    padding: 6px 8px;
+    font: 14px/16px Arial, Helvetica, sans-serif;
+    background: white;
+    background: rgba(255,255,255,0.9);
+    box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    border-radius: 5px;
+  }
+  .info h4 {
+    margin: 0 0 5px;
+    color: #333;
+  }
+
+  .legend {
+    line-height: 18px;
+    color: #555;
+    background: rgba(255,255,255,0.9);
+    padding: 6px 8px;
+    box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    border-radius: 5px;
+  }
+  .legend i {
+    width: 18px;
+    height: 18px;
+    float: left;
+    margin-right: 8px;
+    opacity: 0.8;
+  }
+
+  #title {
+    position: absolute;
+    top: 10px;
+    left: 50px;
+    z-index: 1000;
+    background: rgba(255,255,255,0.9);
+    padding: 8px 14px;
+    border-radius: 5px;
+    box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+  }
+</style>
+</head>
+<body>
+
+<div id="title">Toronto 2001 Census Dissemination Areas — Population</div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+// Base map
+var map = L.map('map', { zoomControl: true }).setView([43.7, -79.4], 11);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+}).addTo(map);
+
+// Population breaks for the choropleth (based on the data distribution)
+var grades = [0, 200, 400, 600, 800, 1000, 1500, 2000];
+var colors = [
+  '#ffffcc',
+  '#ffeda0',
+  '#fed976',
+  '#feb24c',
+  '#fd8d3c',
+  '#fc4e2a',
+  '#e31a1c',
+  '#b10026'
+];
+
+function getColor(pop) {
+  for (var i = grades.length - 1; i >= 0; i--) {
+    if (pop >= grades[i]) return colors[i];
+  }
+  return colors[0];
+}
+
+function style(feature) {
+  var pop = parseInt(feature.properties.pop, 10) || 0;
+  return {
+    fillColor: getColor(pop),
+    weight: 1,
+    opacity: 1,
+    color: '#666',
+    dashArray: '',
+    fillOpacity: 0.75
+  };
+}
+
+// Info control (shows details on hover)
+var info = L.control();
+
+info.onAdd = function (map) {
+  this._div = L.DomUtil.create('div', 'info');
+  this.update();
+  return this._div;
+};
+
+info.update = function (props) {
+  this._div.innerHTML = '<h4>Dissemination Area</h4>' + (props ?
+    '<b>DA ID:</b> ' + props.id + '<br /><b>Population:</b> ' + props.pop
+    : 'Hover over a DA');
+};
+
+info.addTo(map);
+
+function highlightFeature(e) {
+  var layer = e.target;
+
+  layer.setStyle({
+    weight: 3,
+    color: '#222',
+    dashArray: '',
+    fillOpacity: 0.9
+  });
+
+  layer.bringToFront();
+  info.update(layer.feature.properties);
+}
+
+function resetHighlight(e) {
+  geojsonLayer.resetStyle(e.target);
+  info.update();
+}
+
+function zoomToFeature(e) {
+  map.fitBounds(e.target.getBounds());
+}
+
+function onEachFeature(feature, layer) {
+  layer.on({
+    mouseover: highlightFeature,
+    mouseout: resetHighlight,
+    click: zoomToFeature
+  });
+  var pop = feature.properties.pop;
+  var id = feature.properties.id;
+  layer.bindPopup('<b>DA ID:</b> ' + id + '<br><b>Population:</b> ' + pop);
+}
+
+var geojsonLayer;
+
+fetch('da_boundaries_2001.geojson')
+  .then(function (response) { return response.json(); })
+  .then(function (data) {
+    geojsonLayer = L.geoJson(data, {
+      style: style,
+      onEachFeature: onEachFeature
+    }).addTo(map);
+
+    map.fitBounds(geojsonLayer.getBounds());
+  })
+  .catch(function (err) {
+    console.error('Error loading GeoJSON:', err);
+    alert('Could not load da_boundaries_2001.geojson. Make sure it is in the same folder as index.html.');
+  });
+
+// Legend
+var legend = L.control({ position: 'bottomright' });
+
+legend.onAdd = function (map) {
+  var div = L.DomUtil.create('div', 'info legend');
+  var labels = ['<strong>Population</strong>'];
+
+  for (var i = 0; i < grades.length; i++) {
+    div.innerHTML +=
+      '<i style="background:' + colors[i] + '"></i> ' +
+      grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '<br>' : '+');
+  }
+
+  return div;
+};
+
+legend.addTo(map);
+
+</script>
+</body>
+</html>
